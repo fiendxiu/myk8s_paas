@@ -1,7 +1,7 @@
 三个4c8g的kvm虚拟机，操作系统centos 7.8.2003，内核3.10.0-1127
-ops:192.168.122.11
-master:192.168.122.12
-worker:192.168.122.13
+- ops:192.168.122.11
+- master:192.168.122.12
+- worker:192.168.122.13
 
 # 初始化虚拟机
 ## 设置aliyum源
@@ -108,17 +108,14 @@ sysctl --system
 ```
 
 ### 为第一个节点做免密
+免密是可选操作，非必要的
 ```shell
 [root@ops ~]# ssh-keygen -q -t rsa -N "" -f /root/.ssh/id_rsa
 [root@ops ~]# ssh-copy-id -i ~/.ssh/id_rsa.pub 192.168.122.12
 [root@ops ~]# ssh-copy-id -i ~/.ssh/id_rsa.pub 192.168.122.13
-###
-免密是可选操作，非必要的
-###
-
-###
+```
 kubernetes环境依赖主机名通信，比如kubeadm初始化时就依赖主机名。所以这里需要给各节点配置好hosts记录，否则kubeadm init初始化控制平面时会报错的
-###
+```shell
 [root@ops ~]# vi /etc/hosts
 127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4
 ::1         localhost localhost.localdomain localhost6 localhost6.localdomain6
@@ -131,18 +128,16 @@ kubernetes环境依赖主机名通信，比如kubeadm初始化时就依赖主机
 ```
 
 ### 关闭swap
+kubeadm初始化控制平面时，要求swap必须是关闭的
 ```shell
 $ swapoff -a
 $ sed -i '/swap/s/^/#/' /etc/fstab
-###
-kubeadm初始化控制平面时，要求swap必须是关闭的
-###
 ```
 
 
 ## 增加kubernetes源和docker源
 ```shell
-cat <<EOF > /etc/yum.repos.d/kubernetes.repo
+$ cat <<EOF > /etc/yum.repos.d/kubernetes.repo
 [kubernetes]
 name=Kubernetes
 baseurl=https://mirrors.aliyun.com/kubernetes/yum/repos/kubernetes-el7-x86_64/
@@ -151,22 +146,19 @@ gpgcheck=0
 repo_gpgcheck=0
 gpgkey=https://mirrors.aliyun.com/kubernetes/yum/doc/yum-key.gpg https://mirrors.aliyun.com/kubernetes/yum/doc/rpm-package-key.gpg
 EOF
-yum -y makecache
-###
-最初的设置是gpgcheck=1，但后来这个会引发报错：failure: repodata/repomd.xml from kubernetes: [Errno 256] No more mirrors to try.
-https://mirrors.aliyun.com/kubernetes/yum/repos/kubernetes-el7-x86_64/repodata/repomd.xml: [Errno -1] repomd.xml signature could not be verified for kubernetes
-所以上面将gpgcheck设置为0
-###
-
+$ yum -y makecache
 $ yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
 ```
 
 ## 安装docker
+安装docker-ce并设置服务开机自启
 ```shell
 yum install -y yum-utils device-mapper-persistent-data lvm2
 yum install -y docker-ce-cli docker-ce containerd.io
 systemctl --now enable docker
-
+```
+设置docker配置文件daemon.json
+```shell
 $ vi /etc/docker/daemon.json
 {
     "registry-mirrors": ["https://mf0d5bw3.mirror.aliyuncs.com"],
@@ -180,9 +172,9 @@ $ vi /etc/docker/daemon.json
       "overlay2.override_kernel_check=true"
     ]
 }
-###
-设置docker镜像加上和cgroup driver配置，默认时没有daemon.json文件，我们自己创建并设置以上内容即可
-###
+```
+重载配置文件并重启docker服务
+```shell
 $ systemctl daemon-reload 
 $ systemctl restart docker 
 ```
@@ -222,15 +214,15 @@ $ systemctl restart containerd
 ```
 
 ## 安装kubernetes
+安装kubelet并设置kubelet开机自启
 ```shell
 $ yum install -y kubectl-1.26.4 kubelet-1.26.4 kubeadm-1.26.4
 $ systemctl --now enable kubelet
-
+```
+配置kubectl命令补全功能，推荐配置在ops和master机
+```shell
 $ echo "source <(kubectl completion bash)" >> ~/.bash_profile
 $ source ~/.bash_profile
-###
-需要使用kubectl的节点，可以按以上两条命令设置kubectl补全，方便使用
-###
 ```
 
 ## 初始化master节点
@@ -240,14 +232,21 @@ $ kubeadm init --pod-network-cidr 172.20.122.0/24 --service-cidr 172.30.0.0/16 -
 ```
 
 ## 安装cni calico
-推荐用helm安装calico，请在master机器上先下载helm二进制执行文件
+推荐用helm安装calico，在ops机器上先下载helm安装包
+```shell
+[root@ops ~]# tar -zxf ./helm-v3.11.3-linux-amd64.tar.gz && mv ./linux-amd64/helm /usr/local/sbin/helm && chmod a+x /usr/local/sbin/helm && rm -rf ./linux-amd64 && rm -f ./helm-v3.11.3-linux-amd64.tar.gz
+```
+从master机器上复制kubeconfig到ops机器上，使ops机器能够控制k8s集群
+```shell
+scp master:/etc/kubernetes/admin.conf /etc/kubernetes/
+```
 添加calico chart仓库
 ```shell
 helm repo add projectcalico https://docs.tigera.io/calico/charts
 ```
 创建chart的values.yaml配置文件
 ```shell
-vi /home/k8s_install_tmp/calico/values.yaml
+vi values.yaml
 installation:
   cni:
     type: Calico
@@ -263,4 +262,18 @@ apiServer:
 使用value.yaml配置文件部署calico
 ```shell
 helm install calico projectcalico/tigera-operator --version v3.26.0 --namespace tigera-operator --create-namespace -f values.yaml
+```
+
+## 添加worker节点到集群
+master节点初始化完成后，有一些输出信息，其中最下方的内容提示了worker节点加入集群的命令。在worker上执行kubeadm join
+```shell
+Then you can join any number of worker nodes by running the following on each as root:
+
+kubeadm join 192.168.122.12:6443 --token 2vq7b0.7m4w09goc22b1i5t \
+	--discovery-token-ca-cert-hash sha256:259542fcb1ee548eb562480354e2b5d5630e5c396fbdc8384240944883e7f4d3
+```
+如果找不到join信息了，可以再创建一个token并显示出join信息。token有效期24小时，过期后自动删除
+```shell
+[root@master ~]# kubeadm token create --print-join-command
+kubeadm join 192.168.122.12:6443 --token 3kqa78.48olrp7fd9zazwn7 --discovery-token-ca-cert-hash sha256:259542fcb1ee548eb562480354e2b5d5630e5c396fbdc8384240944883e7f4d3 
 ```

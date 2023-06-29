@@ -221,7 +221,7 @@ $ systemctl enable --now containerd
 $ systemctl restart containerd
 ```
 
-## 安装kubelet
+## 安装kubernetes
 ```shell
 $ yum install -y kubectl-1.26.4 kubelet-1.26.4 kubeadm-1.26.4
 $ systemctl --now enable kubelet
@@ -231,4 +231,36 @@ $ source ~/.bash_profile
 ###
 需要使用kubectl的节点，可以按以上两条命令设置kubectl补全，方便使用
 ###
+```
+
+## 初始化master节点
+初始化要指定--pod-network-cidr参数，不然之后安装cni calico时会失败
+```shell
+$ kubeadm init --pod-network-cidr 172.20.122.0/24 --service-cidr 172.30.0.0/16 --kubernetes-version v1.26.4
+```
+
+## 安装cni calico
+推荐用helm安装calico，请在master机器上先下载helm二进制执行文件
+添加calico chart仓库
+```shell
+helm repo add projectcalico https://docs.tigera.io/calico/charts
+```
+创建chart的values.yaml配置文件
+```shell
+vi /home/k8s_install_tmp/calico/values.yaml
+installation:
+  cni:
+    type: Calico
+  calicoNetwork:
+    ipPools:
+    - cidr: 172.20.0.0/16
+    nodeAddressAutodetectionV4:
+      kubernetes: NodeInternalIP
+
+apiServer:
+  enabled: false
+```
+使用value.yaml配置文件部署calico
+```shell
+helm install calico projectcalico/tigera-operator --version v3.26.0 --namespace tigera-operator --create-namespace -f values.yaml
 ```

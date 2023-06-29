@@ -1,0 +1,132 @@
+扩展ops管理能力
+
+# Ansible
+ops机使用ansible shell模块对多台机器批量执行shell。
+安装ansible
+```shell
+[root@ops ~]# yum -y install ansible
+```
+在/etc/ansible/hosts文件添加目标节点
+```shell
+$ cat <<EOF >> /etc/ansible/hosts
+
+[apps]   
+app11
+app12
+app13
+
+[k8s]   
+master
+worker
+EOF
+```
+测试批量执行
+```shell
+[root@ops ~]# ansible k8s -m shell -a 'hostname -i'
+worker | CHANGED | rc=0 >>
+192.168.122.13
+master | CHANGED | rc=0 >>
+192.168.122.12
+```
+
+# NTP
+安装chrony
+```shell
+[root@ops ~]# ansible apps -m shell -a 'yum install -y chrony'
+```
+修改chrony.conf
+```shell
+[root@ops ~]# ansible apps -m shell -a 'sed -i "/^server/s/^/#/" /etc/chrony.conf'
+[root@ops ~]# ansible apps -m shell -a 'sed -i "/server 3/s/^.*$/server ntp1.aliyun.com iburst/" /etc/chrony.conf'
+```
+启动时间同步
+```shell
+[root@ops ~]# ansible apps -m shell -a 'timedatectl set-ntp true'
+```
+
+# Harbor
+官网`https://goharbor.io/docs/2.8.0/install-config/configure-yml-file/`
+## 升级ops机的openssl
+安装依赖库
+```shell
+yum install -y zlib zlib-dev openssl-devel sqlite-devel bzip2-devel libffi libffi-devel gcc gcc-c++
+```
+下载openssl安装包并安装
+```shell
+wget --no-check-certificate http://www.openssl.org/source/openssl-1.1.1.tar.gz &&\
+tar -zxvf openssl-1.1.1.tar.gz &&\
+cd openssl-1.1.1 &&\
+./config --prefix=/opt/openssl shared zlib &&\
+make && make install &&\
+cd - && rm -rf openssl-1.1.1*
+```
+设置环境变量LD_LIBRARY_PATH.LD_LIBRARY_PATH环境变量主要用于指定查找共享库（动态链接库）时除了默认路径之外的其他路径。当执行函数动态链接.so时，如果此文件不在缺省目录下‘/lib' and ‘/usr/lib'，那么就需要指定环境变量LD_LIBRARY_PATH
+```shell
+echo "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/openssl/lib" >> $HOME/.bash_profile && source $HOME/.bash_profile
+```
+## 使用openssl生成自签名证书
+规划harbor使用的域名，比如：reg.myk8s.vm
+创建目录存放harbor证书和安装包
+```shell
+mkdir -p ~/harbor_install/cert && cd ~/harbor_install/cert
+```
+生成证书颁发机构CA证书私钥（ca.key）
+```shell
+openssl genrsa -out ca.key 4096
+```
+生成证书颁发机构CA证书（ca.crt），注意CN=reg.myk8s.vm这里要填自己使用的域名
+```shell
+openssl req -x509 -new -nodes -sha512 -days 3650 -subj "/C=CN/ST=Guangdong/L=Dongguan/O=indax/OU=Personal/CN=reg.myk8s.vm" -key ca.key -out ca.crt
+```
+生成服务器证书私钥（reg.myk8s.vm.key）
+```shell
+openssl genrsa -out reg.myk8s.vm.key 4096
+```
+生成服务器证书签名请求（CSR）（reg.myk8s.vm.csr）
+```shell
+openssl req -sha512 -new -subj "/C=CN/ST=Guangdong/L=Dongguan/O=indax/OU=Personal/CN=reg.myk8s.vm" -key reg.myk8s.vm.key -out reg.myk8s.vm.csr
+```
+生成x509 v3扩展文件
+```shell
+cat > v3.ext <<-EOF
+authorityKeyIdentifier=keyid,issuer
+basicConstraints=CA:FALSE
+keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[alt_names]
+DNS.1=reg.myk8s.vm
+DNS.2=reg.myk8s
+DNS.3=reg
+EOF
+```
+使用v3.ext文件为主机生成证书（reg.myk8s.vm.crt）
+```shell
+openssl x509 -req -sha512 -days 3650 -extfile v3.ext -CA ca.crt -CAkey ca.key -CAcreateserial -in reg.myk8s.vm.csr -out reg.myk8s.vm.crt
+```
+将crt转换为cert格式（reg.myk8s.vm.cert）
+```shell
+openssl x509 -inform PEM -in reg.myk8s.vm.crt -out reg.myk8s.vm.cert
+```
+最终使用到的是3个文件
+```shell
+├── yourdomain.com.cert  <-- Server certificate signed by CA
+├── yourdomain.com.key   <-- Server key signed by CA
+└── ca.crt               <-- Certificate authority that signed the registry certificate
+```
+## 安装Harbor
+创建harbor数据目录，下载harbor离线安装包
+```shell
+mkdir -p /home/t4/harbor && cd ~/harbor_install/ && wget https://github.com/goharbor/harbor/releases/download/v2.8.1/harbor-offline-installer-v2.8.1.tgz
+```
+解压harbor离线安装包，重命名配置文件为harbor.yml
+```shell
+tar -zxf harbor-offline-installer-v2.8.1.tgz && cd harbor/ && mv harbor.yml.tmpl harbor.yml
+```
+修改配置文件
+```shell
+[root@ops harbor]# sed -i '/^hostname/s/^.*$/hostname: reg.myk8s.vm/' harbor.yml 
+[root@ops harbor]# sed -i '/certificate:/s#^.*$#certificate: /root/harbor_install/cert/reg.myk8s.vm.cert#' harbor.yml 
+[root@ops harbor]# sed -i '/private_key:/s#^.*$#private_key: /root/harbor_install/cert/reg.myk8s.vm.key#' harbor.yml 
+```

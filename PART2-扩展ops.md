@@ -180,3 +180,7 @@ cp /root/harbor_install/cert/reg.myk8s.vm.cert /etc/docker/certs.d/reg.myk8s.vm/
 cp /root/harbor_install/cert/reg.myk8s.vm.key /etc/docker/certs.d/reg.myk8s.vm/
 systemctl restart docker
 ```
+ops机重启docker服务会使部分Harobr容器退出，需要重新拉起Harbor
+```shell
+cd /root/harbor_install/harbor && docker compose up -d
+```

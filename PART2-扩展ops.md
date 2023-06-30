@@ -125,8 +125,58 @@ mkdir -p /home/t4/harbor && cd ~/harbor_install/ && wget https://github.com/goha
 tar -zxf harbor-offline-installer-v2.8.1.tgz && cd harbor/ && mv harbor.yml.tmpl harbor.yml
 ```
 修改配置文件
+yaml文件严格要求缩进格式。注意`certificate:`和`private_key:`前面有两个空格
 ```shell
 [root@ops harbor]# sed -i '/^hostname/s/^.*$/hostname: reg.myk8s.vm/' harbor.yml 
-[root@ops harbor]# sed -i '/certificate:/s#^.*$#certificate: /root/harbor_install/cert/reg.myk8s.vm.cert#' harbor.yml 
-[root@ops harbor]# sed -i '/private_key:/s#^.*$#private_key: /root/harbor_install/cert/reg.myk8s.vm.key#' harbor.yml 
+[root@ops harbor]# sed -i '/certificate:/s#^.*$#  certificate: /root/harbor_install/cert/reg.myk8s.vm.cert#' harbor.yml 
+[root@ops harbor]# sed -i '/private_key:/s#^.*$#  private_key: /root/harbor_install/cert/reg.myk8s.vm.key#' harbor.yml 
+```
+修改hosts文件
+```shell
+ansible apps -m shell -a "sed -i '/app11/s/$/ reg.myk8s.vm/' /etc/hosts"
+```
+执行安装
+等待提示安装完成
+`docker ps -a`检查harbor容器是否全部`Up`
+浏览器访问`https://192.168.122.11/`能够打开Harbor页面，使用默认账号密码`admin/Harbor12345`登入
+```shell
+./prepare && ./install.sh --with-notary
+```
+## k8s节点添加Harbor
+k8s节点使用containerd作为容器运行时，则配置containerd对接Harbor
+修改`/etc/containerd/config.toml`配置文件，在`      [plugins."io.containerd.grpc.v1.cri".registry.configs]`下添加Harbor信息
+```shell
+        [plugins."io.containerd.grpc.v1.cri".registry.configs."reg.myk8s.vm".tls]
+          insecure_skip_verify = false
+          ca_file = "/etc/containerd/cert/ca.crt"
+          cert_file = "/etc/containerd/cert/reg.myk8s.vm.cert"
+          key_file = "/etc/containerd/cert/reg.myk8s.vm.key"
+        [plugins."io.containerd.grpc.v1.cri".registry.configs."reg.myk8s.vm.cn".auth]
+          username = "admin"
+          password = "Harbor12345"
+```
+配置containerd证书目录并放入证书文件
+```shell
+mkdir /etc/containerd/cert
+cp /root/harbor_install/cert/ca.crt /etc/containerd/cert/
+cp /root/harbor_install/cert/reg.myk8s.vm.cert /etc/containerd/cert/
+cp /root/harbor_install/cert/reg.myk8s.vm.key /etc/containerd/cert/
+```
+分发修改好的配置文件和证书到k8s节点
+```shell
+for i in app1{2..3}; do scp /etc/containerd/config.toml $i:/etc/containerd/; scp -rp /etc/containerd/cert $i:/etc/containerd/cert; done
+```
+重启containerd服务
+```shell
+ansible apps -m shell -a "systemctl daemon-reload && systemctl restart containerd"
+```
+## ops机添加Harbor
+ops机使用docker，则配置docker对接Harbor
+配置docker证书目录并放入证书文件，然后重启docker服务
+```shell
+mkdir -p /etc/docker/certs.d/reg.myk8s.vm
+cp /root/harbor_install/cert/ca.crt /etc/docker/certs.d/reg.myk8s.vm/
+cp /root/harbor_install/cert/reg.myk8s.vm.cert /etc/docker/certs.d/reg.myk8s.vm/
+cp /root/harbor_install/cert/reg.myk8s.vm.key /etc/docker/certs.d/reg.myk8s.vm/
+systemctl restart docker
 ```

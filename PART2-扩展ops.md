@@ -221,7 +221,7 @@ kubectl get pod
 将kuboard启动命令写入文件，方便维护。
 避免和harbor端口冲突，web访问端口设置为8080。
 ```shell
-[root@ops ~]# mkdir kuboard_install && cd kuboard_install
+[root@ops ~]# mkdir kuboard_install && mkdir /root/kuboard-data && cd kuboard_install
 [root@ops kuboard_install]# cat > start-kuboard.sh <<-EOF
 ## 单机docker run方式运行kuboard
 ## 安装 Kuboard v3.x 版本的指令如下：

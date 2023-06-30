@@ -129,7 +129,8 @@ yaml文件严格要求缩进格式。注意`certificate:`和`private_key:`前面
 ```shell
 [root@ops harbor]# sed -i '/^hostname/s/^.*$/hostname: reg.myk8s.vm/' harbor.yml 
 [root@ops harbor]# sed -i '/certificate:/s#^.*$#  certificate: /root/harbor_install/cert/reg.myk8s.vm.cert#' harbor.yml 
-[root@ops harbor]# sed -i '/private_key:/s#^.*$#  private_key: /root/harbor_install/cert/reg.myk8s.vm.key#' harbor.yml 
+[root@ops harbor]# sed -i '/private_key:/s#^.*$#  private_key: /root/harbor_install/cert/reg.myk8s.vm.key#' harbor.yml
+[root@ops harbor]# sed -i '/data_volume:/s#/data#/home/t4/harbor#' harbor.yml
 ```
 修改hosts文件
 ```shell
@@ -183,4 +184,33 @@ systemctl restart docker
 ops机重启docker服务会使部分Harobr容器退出，需要重新拉起Harbor
 ```shell
 cd /root/harbor_install/harbor && docker compose up -d
+```
+## 验证ops机使用docker推送镜像到Harbor，k8s从Harbor拉取镜像部署pod
+ops机从公网拉取一个测试镜像，改tag后上传到Harbor。使用默认账号密码`admin/Harbor12345`登入
+```shell
+docker pull busybox
+docker login reg.myk8s.vm
+docker tag busybox:latest reg.myk8s.vm/library/busybox:v1.0
+docker push reg.myk8s.vm/library/busybox:v1.0
+```
+写一份pod.yaml测试
+```shell
+cat > pod.yaml <<-EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod
+spec:
+  containers:
+  - name: test
+    image: reg.myk8s.vm/library/busybox:v1.0
+    imagePullPolicy: IfNotPresent
+    command: ["/bin/sh", "-c", "ping localhost -i 10"]
+  restartPolicy: Never
+EOF
+```
+创建pod并查看pod状态，`Running`表示k8s节点正常从Harbor拉取镜像
+```shell
+kubectl apply -f pod.yaml
+kubectl get pod
 ```

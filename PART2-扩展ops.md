@@ -127,8 +127,9 @@ tar -zxf harbor-offline-installer-v2.8.1.tgz && cd harbor/ && mv harbor.yml.tmpl
 修改配置文件
 yaml文件严格要求缩进格式。注意`certificate:`和`private_key:`前面有两个空格
 ```shell
-[root@ops harbor]# sed -i '/^hostname/s/^.*$/hostname: reg.myk8s.vm/' harbor.yml 
-[root@ops harbor]# sed -i '/certificate:/s#^.*$#  certificate: /root/harbor_install/cert/reg.myk8s.vm.cert#' harbor.yml 
+[root@ops harbor]# sed -i '/^hostname/s/^.*$/hostname: reg.myk8s.vm/' harbor.yml
+[root@ops harbor]# sed -i '/  port: 80/s/  port: 80/  port: 5000/' harbor.yml
+[root@ops harbor]# sed -i '/certificate:/s#^.*$#  certificate: /root/harbor_install/cert/reg.myk8s.vm.cert#' harbor.yml
 [root@ops harbor]# sed -i '/private_key:/s#^.*$#  private_key: /root/harbor_install/cert/reg.myk8s.vm.key#' harbor.yml
 [root@ops harbor]# sed -i '/data_volume:/s#/data#/home/t4/harbor#' harbor.yml
 ```
@@ -228,9 +229,9 @@ kubectl get pod
 sudo docker run -d \
   --restart=unless-stopped \
   --name=kuboard \
-  -p 8080:8080/tcp \
+  -p 80:80/tcp \
   -p 10081:10081/tcp \
-  -e KUBOARD_ENDPOINT="http://192.168.122.11:8080" \
+  -e KUBOARD_ENDPOINT="http://192.168.122.11:80" \
   -e KUBOARD_AGENT_SERVER_TCP_PORT="10081" \
   -v /root/kuboard-data:/data \
   eipwork/kuboard:v3
@@ -238,6 +239,6 @@ EOF
 [root@ops kuboard_install]# bash start-kuboard.sh
 ```
 ## 访问Kuboard
-在浏览器输入 `http://your-host-ip:8080` 即可访问 Kuboard v3.x 的界面，登录方式：
+在浏览器输入 `http://your-host-ip:80` 即可访问 Kuboard v3.x 的界面，登录方式：
 - 用户名： `admin`
 - 默认密码： `Kuboard123`

@@ -220,25 +220,26 @@ kubectl get pod
 # Kuboard
 ## 部署kuboard
 将kuboard启动命令写入文件，方便维护。
-避免和harbor端口冲突，web访问端口设置为8080。
 ```shell
 [root@ops ~]# mkdir kuboard_install && mkdir /root/kuboard-data && cd kuboard_install
 [root@ops kuboard_install]# cat > start-kuboard.sh <<-EOF
 ## 单机docker run方式运行kuboard
-## 安装 Kuboard v3.x 版本的指令如下：
+## 安装 Kuboard v3.5.2.4 版本的指令如下：
 sudo docker run -d \
   --restart=unless-stopped \
   --name=kuboard \
   -p 80:80/tcp \
+  -p 10081:10081/udp \
   -p 10081:10081/tcp \
   -e KUBOARD_ENDPOINT="http://192.168.122.11:80" \
+  -e KUBOARD_AGENT_SERVER_UDP_PORT="10081" \
   -e KUBOARD_AGENT_SERVER_TCP_PORT="10081" \
   -v /root/kuboard-data:/data \
-  eipwork/kuboard:v3
+  eipwork/kuboard:v3.5.2.4
 EOF
 [root@ops kuboard_install]# bash start-kuboard.sh
 ```
 ## 访问Kuboard
-在浏览器输入 `http://your-host-ip:80` 即可访问 Kuboard v3.x 的界面，登录方式：
+在浏览器输入 `http://your-host-ip:80` 即可访问 Kuboard 的界面，登录方式：
 - 用户名： `admin`
 - 默认密码： `Kuboard123`
